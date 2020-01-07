@@ -14,13 +14,24 @@ func main() {
 	
 	var in string
 	fmt.Scanln(&in)
-	
-	fmt.Println("视频号\t点赞数\t投币数\t收藏数")
+
+	defer func(){
+		fmt.Println()
+		fmt.Println("按 回车 键退出...")
+		fmt.Scanln(&in)
+	}()
 	
 	// 读取文件，判断文件是否存在
 	f, err := excelize.OpenFile("vedios.xlsx")
 	if err != nil {
 		fmt.Println(err.Error())
+		return
+	}
+
+	// 读取视频地址
+	rows := f.GetRows("Sheet1")
+	if len(rows) == 0 {
+		fmt.Println("Excel文件错误，检查表格！")
 		return
 	}
 
@@ -33,12 +44,7 @@ func main() {
 		go work(readQueue, writeQueue, &wg)
 	}
 
-	// 读取视频ID
-	rows := f.GetRows("Sheet1")
-	if len(rows) == 0 {
-		fmt.Println("Excel文件错误，检查文件！")
-		return
-	}
+	// 读取统计数据
 	rows = rows[1:]
 	for i, row := range rows {
 		readQueue <- &model{
@@ -46,9 +52,10 @@ func main() {
 			ID:   strings.ReplaceAll(row[0], "https://www.bilibili.com/video/av", ""),
 		}
 	}
-	// 表格读取完毕，关闭读取队列
+	// 读取完毕，关闭读取队列
 	close(readQueue)
 
+	fmt.Println("视频号\t点赞数\t投币数\t收藏数")
 	go func() {
 		for {
 			row, ok := <-writeQueue
@@ -63,18 +70,16 @@ func main() {
 		}
 	}()
 
-	// 等待统计完成，关闭写通道
+	// 等待统计写入完成
 	wg.Wait()
+	// 关闭写通道
 	close(writeQueue)
 	// 保存文件
 	if err = f.Save(); err != nil {
-		fmt.Println("表格保存失败，请确认表格未打开，",err.Error())
+		fmt.Println("表格保存失败，请确认表格处于未打开，",err.Error())
 	} else {
 		fmt.Println("读取完成，数据已保存！")
 	}
-	fmt.Println()
-	fmt.Println("按 回车 键退出...")
-	fmt.Scanln(&in)
 }
 
 func work(readQueue <-chan *model, writeQueue chan<- *model, wg *sync.WaitGroup) {
