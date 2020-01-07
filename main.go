@@ -2,25 +2,27 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/360EntSecGroup-Skylar/excelize"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 func main() {
 	fmt.Println("编辑 vedios.xlsx 表格，并关闭表格，按 回车 键开始读取...")
-	
+
 	var in string
 	fmt.Scanln(&in)
 
-	defer func(){
+	defer func() {
 		fmt.Println()
 		fmt.Println("按 回车 键退出...")
 		fmt.Scanln(&in)
 	}()
-	
+
 	// 读取文件，判断文件是否存在
 	f, err := excelize.OpenFile("vedios.xlsx")
 	if err != nil {
@@ -39,7 +41,7 @@ func main() {
 	readQueue := make(chan *model, 100)
 	writeQueue := make(chan *model, 100)
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go work(readQueue, writeQueue, &wg)
 	}
@@ -47,9 +49,11 @@ func main() {
 	// 读取统计数据
 	rows = rows[1:]
 	for i, row := range rows {
-		readQueue <- &model{
-			Line: i + 2,
-			ID:   strings.ReplaceAll(row[0], "https://www.bilibili.com/video/av", ""),
+		if strings.Contains(row[0], "https://www.bilibili.com/video/av") {
+			readQueue <- &model{
+				Line: i + 2,
+				ID:   strings.ReplaceAll(row[0], "https://www.bilibili.com/video/av", ""),
+			}
 		}
 	}
 	// 读取完毕，关闭读取队列
@@ -63,10 +67,10 @@ func main() {
 				break
 			}
 			f.SetCellValue("Sheet1", fmt.Sprintf("B%v", row.Line), row.Info.Data.AID)
-			f.SetCellValue("Sheet1", fmt.Sprintf("C%v", row.Line), row.Info.Data.Like)
-			f.SetCellValue("Sheet1", fmt.Sprintf("D%v", row.Line), row.Info.Data.Coin)
-			f.SetCellValue("Sheet1", fmt.Sprintf("E%v", row.Line), row.Info.Data.Favorite)
-			fmt.Println(fmt.Sprintf("av%v", row.Info.Data.AID), row.Info.Data.Like, row.Info.Data.Coin, row.Info.Data.Favorite)
+			f.SetCellValue("Sheet1", fmt.Sprintf("C%v", row.Line), row.Info.Data.Stat.Like)
+			f.SetCellValue("Sheet1", fmt.Sprintf("D%v", row.Line), row.Info.Data.Stat.Coin)
+			f.SetCellValue("Sheet1", fmt.Sprintf("E%v", row.Line), row.Info.Data.Stat.Favorite)
+			fmt.Println(fmt.Sprintf("av%v", row.Info.Data.AID), row.Info.Data.Stat.Like, row.Info.Data.Stat.Coin, row.Info.Data.Stat.Favorite)
 		}
 	}()
 
@@ -76,7 +80,7 @@ func main() {
 	close(writeQueue)
 	// 保存文件
 	if err = f.Save(); err != nil {
-		fmt.Println("表格保存失败，请确认表格处于未打开，",err.Error())
+		fmt.Println("表格保存失败，请确认表格处于未打开，", err.Error())
 	} else {
 		fmt.Println("读取完成，数据已保存！")
 	}
@@ -89,17 +93,25 @@ func work(readQueue <-chan *model, writeQueue chan<- *model, wg *sync.WaitGroup)
 		if !ok {
 			return
 		}
-		info, _ := getInfo(row.ID)
+		info, err := getInfo(row.ID)
+		if err != nil {
+			fmt.Printf("av%v 错误：%v", row.ID, err)
+			continue
+		}
 		row.Info = info
 		writeQueue <- row
+		time.Sleep(300 * time.Millisecond)
 	}
 }
 
 func getInfo(id string) (*avInfo, error) {
-	url := fmt.Sprintf("https://api.bilibili.com/x/web-interface/archive/stat?aid=%v", id)
+	url := fmt.Sprintf("https://api.bilibili.com/x/web-interface/view?aid=%v", id)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New("Status Code Not 200")
 	}
 	defer resp.Body.Close()
 	info := &avInfo{}
@@ -120,9 +132,14 @@ type avInfo struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		AID      int `json:"aid"`
-		Like     int `json:"like"`
-		Coin     int `json:"coin"`
-		Favorite int `json:"favorite"`
+		AID   int    `json:"aid"`
+		Title string `json:"title"`
+		Danmu int    `json:"danmaku"`
+		Stat  struct {
+			View     int `json:"view"`
+			Like     int `json:"like"`
+			Coin     int `json:"coin"`
+			Favorite int `json:"favorite"`
+		} `json:"stat`
 	} `json:"data"`
 }
