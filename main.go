@@ -67,10 +67,10 @@ func main() {
 				break
 			}
 			f.SetCellValue("Sheet1", fmt.Sprintf("B%v", row.Line), row.Info.Data.AID)
-			f.SetCellValue("Sheet1", fmt.Sprintf("C%v", row.Line), row.Info.Data.Stat.Like)
-			f.SetCellValue("Sheet1", fmt.Sprintf("D%v", row.Line), row.Info.Data.Stat.Coin)
-			f.SetCellValue("Sheet1", fmt.Sprintf("E%v", row.Line), row.Info.Data.Stat.Favorite)
-			fmt.Println(fmt.Sprintf("av%v", row.Info.Data.AID), row.Info.Data.Stat.Like, row.Info.Data.Stat.Coin, row.Info.Data.Stat.Favorite)
+			f.SetCellValue("Sheet1", fmt.Sprintf("C%v", row.Line), row.Info.Data.Like)
+			f.SetCellValue("Sheet1", fmt.Sprintf("D%v", row.Line), row.Info.Data.Coin)
+			f.SetCellValue("Sheet1", fmt.Sprintf("E%v", row.Line), row.Info.Data.Favorite)
+			fmt.Println(fmt.Sprintf("av%v", row.Info.Data.AID), row.Info.Data.Like, row.Info.Data.Coin, row.Info.Data.Favorite)
 		}
 	}()
 
@@ -100,16 +100,29 @@ func work(readQueue <-chan *model, writeQueue chan<- *model, wg *sync.WaitGroup)
 		}
 		row.Info = info
 		writeQueue <- row
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
 func getInfo(id string) (*avInfo, error) {
-	url := fmt.Sprintf("https://api.bilibili.com/x/web-interface/view?aid=%v", id)
-	resp, err := http.Get(url)
+	url := fmt.Sprintf("https://api.bilibili.com/x/web-interface/archive/stat?aid=%v", id)
+	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	request.Header.Add("Accept", "*/*")
+	request.Header.Add("Accept-Encoding", "gzip, deflate, br")
+	request.Header.Add("Accept-Language", "zh-CN,zh;q=0.9")
+	request.Header.Add("Connection", "keep-alive")
+	request.Header.Add("Host", "api.bilibili.com")
+	request.Header.Add("Origin", "https://www.bilibili.com")
+	request.Header.Add("Referer", fmt.Sprintf("https://www.bilibili.com/video/av%v", id))
+	request.Header.Add("Sec-Fetch-Mode", "cors")
+	request.Header.Add("Sec-Fetch-Site", "same-site")
+	request.Header.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36")
+	client := http.Client{}
+	
+	resp, err := client.Do(request)
 	if resp.StatusCode != 200 {
 		return nil, errors.New("Status Code Not 200")
 	}
@@ -132,14 +145,11 @@ type avInfo struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		AID   int    `json:"aid"`
-		Title string `json:"title"`
-		Danmu int    `json:"danmaku"`
-		Stat  struct {
-			View     int `json:"view"`
-			Like     int `json:"like"`
-			Coin     int `json:"coin"`
-			Favorite int `json:"favorite"`
-		} `json:"stat`
+		AID      int    `json:"aid"`
+		Danmu    int    `json:"danmaku"`
+		View     int    `json:"view"`
+		Like     int    `json:"like"`
+		Coin     int    `json:"coin"`
+		Favorite int    `json:"favorite"`
 	} `json:"data"`
 }
